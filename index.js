@@ -17,7 +17,10 @@ export async function connectToMongoDB() {
         console.dir(err);
     }
 }
-connectToMongoDB()
+
+
+const mongoClient = connectToMongoDB()
+const db = mongoClient.db("salon-book-db")
 
 app.get('/', (req, res) => {
     res.send({ message: "API is running " })
