@@ -37,6 +37,45 @@ app.post('/add-service', async (req, res) => {
     res.send(result)
 })
 
+app.get("/services", async (req, res) => {
+    const { search, category, sort } = req.query;
+
+    const filter = {
+        status: "active",
+    };
+    if (search) {
+        filter.serviceName = {
+            $regex: search,
+            $options: "i",
+        };
+    }
+    if (category) {
+        filter.category = category;
+    }
+    const sortOption = {};
+
+    if (sort === "low-to-high") {
+        sortOption.price = 1;
+    } else if (sort === "high-to-low") {
+        sortOption.price = -1;
+    }
+    const result = await services
+        .find(filter)
+        .sort(sortOption)
+        .toArray();
+
+    res.send(result);
+});
+
+app.get('/featured-services', async (req, res) => {
+    const result = await services
+        .find({ status: "active" })
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .toArray();
+
+    res.send(result);
+})
 
 app.get('/', (req, res) => {
     res.send({ message: "API is running " })
