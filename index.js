@@ -1,7 +1,10 @@
 import express from 'express'
+import cors from 'cors'
 import 'dotenv/config'
 
 const app = express()
+app.use(express.json())
+app.use(cors())
 const PORT = process.env.PORT || 5000
 
 import { MongoClient } from 'mongodb';
@@ -21,6 +24,19 @@ export async function connectToMongoDB() {
 
 const mongoClient = await connectToMongoDB()
 const db = mongoClient.db("salon-book-db")
+const services = db.collection("services")
+
+// services apis
+app.post('/add-service', async (req, res) => {
+    const service = {
+        ...req.body,
+        status: "active",
+        postedAt: new Date().toISOString().slice(0, 10)
+    }
+    const result = await services.insertOne(service)
+    res.send(result)
+})
+
 
 app.get('/', (req, res) => {
     res.send({ message: "API is running " })
