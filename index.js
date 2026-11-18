@@ -19,7 +19,7 @@ export async function connectToMongoDB() {
 }
 
 
-const mongoClient = connectToMongoDB()
+const mongoClient = await connectToMongoDB()
 const db = mongoClient.db("salon-book-db")
 
 app.get('/', (req, res) => {
