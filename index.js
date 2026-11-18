@@ -7,7 +7,7 @@ app.use(express.json())
 app.use(cors())
 const PORT = process.env.PORT || 5000
 
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 
 const client = new MongoClient(process.env.MONGODB_URI);
 
@@ -66,6 +66,13 @@ app.get("/services", async (req, res) => {
 
     res.send(result);
 });
+
+app.get('/services/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) }
+    const result = await services.findOne(query)
+    res.send(result)
+})
 
 app.get('/featured-services', async (req, res) => {
     const result = await services
