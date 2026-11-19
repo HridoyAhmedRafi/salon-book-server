@@ -370,12 +370,10 @@ app.patch('/admin/users/:id/status', async (req, res) => {
             message: "Only customer accounts can be blocked.",
         })
     }
-
     await users.updateOne(
         { _id: user._id },
         { $set: { isBlocked } },
     )
-
     res.send({
         message: isBlocked ? "Customer blocked." : "Customer unblocked.",
     })
