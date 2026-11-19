@@ -279,6 +279,48 @@ app.get('/admin/appointments', async (req, res) => {
     res.send(result)
 })
 
+// admin confirm or cancel an appointment
+app.patch('/admin/appointments/:id/status', async (req, res) => {
+    const { id } = req.params
+    const { status } = req.body
+
+    if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid appointment id." })
+    }
+    if (status !== "Confirmed" && status !== "Cancelled") {
+        return res.status(400).send({
+            message: "Status must be either Confirmed or Cancelled.",
+        })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
+    if (!appointment) {
+        return res.status(404).send({ message: "Appointment not found." })
+    }
+
+    if (status === "Confirmed" && appointment.Status !== "Pending") {
+        return res.status(409).send({
+            message: `A ${appointment.Status.toLowerCase()} appointment cannot be confirmed.`,
+        })
+    }
+    if (
+        status === "Cancelled" &&
+        appointment.Status !== "Pending" &&
+        appointment.Status !== "Confirmed"
+    ) {
+        return res.status(409).send({
+            message: `A ${appointment.Status.toLowerCase()} appointment cannot be cancelled.`,
+        })
+    }
+
+    await appointments.updateOne(
+        { _id: appointment._id },
+        { $set: { Status: status } },
+    )
+
+    res.send({ message: `Appointment ${status.toLowerCase()}.` })
+})
+
 // dashboard stats
 app.get("/admin/dashboard-stats", async (req, res) => {
     const totalCustomers = await users.countDocuments({
