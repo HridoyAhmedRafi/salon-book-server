@@ -180,7 +180,6 @@ app.patch('/services/:id/status', async (req, res) => {
     if (result.matchedCount === 0) {
         return res.status(404).send({ message: "Service not found." })
     }
-
     res.send({
         message:
             status === "active"
