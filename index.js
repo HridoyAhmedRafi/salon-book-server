@@ -86,6 +86,16 @@ app.get('/featured-services', async (req, res) => {
     res.send(result);
 })
 
+// admin services apis
+app.get('/admin/services', async (req, res) => {
+    const result = await services
+        .find({})
+        .sort({ postedAt: -1 })
+        .toArray();
+
+    res.send(result);
+});
+
 // appoinment apis
 app.post('/book-appointment', async (req, res) => {
     const existingAppointment = await appointments.findOne({
