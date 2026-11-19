@@ -269,6 +269,16 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
     res.send({ message: "Appointment cancelled." })
 })
 
+// admin appointment list
+app.get('/admin/appointments', async (req, res) => {
+    const result = await appointments
+        .find({})
+        .sort({ _id: -1 })
+        .toArray()
+
+    res.send(result)
+})
+
 // dashboard stats
 app.get("/admin/dashboard-stats", async (req, res) => {
     const totalCustomers = await users.countDocuments({
