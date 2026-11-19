@@ -315,6 +315,38 @@ app.patch('/admin/appointments/:id/status', async (req, res) => {
     res.send({ message: `Appointment ${status.toLowerCase()}.` })
 })
 
+// admin customer list
+app.get('/admin/users', async (req, res) => {
+    const customers = await users
+        .find({ role: "customer" })
+        .sort({ _id: -1 })
+        .toArray()
+
+    const appointmentCounts = await appointments
+        .aggregate([
+            { $group: { _id: "$customerId", count: { $sum: 1 } } },
+        ])
+        .toArray()
+
+    const countByCustomer = new Map(
+        appointmentCounts.map(({ _id, count }) => [String(_id), count]),
+    )
+
+    res.send(
+        customers.map((customer) => ({
+            _id: customer._id,
+            name: customer.name,
+            email: customer.email,
+            image: customer.image ?? null,
+            role: customer.role,
+            isBlocked: customer.isBlocked ?? false,
+            createdAt: customer.createdAt,
+            appointmentCount:
+                countByCustomer.get(customer._id.toString()) ?? 0,
+        })),
+    )
+})
+
 // dashboard stats
 app.get("/admin/dashboard-stats", async (req, res) => {
     const totalCustomers = await users.countDocuments({
