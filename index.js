@@ -244,17 +244,13 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
     if (!ObjectId.isValid(id)) {
         return res.status(400).send({ message: "Invalid appointment id." })
     }
-
     const appointment = await appointments.findOne({ _id: new ObjectId(id) })
-
     if (!appointment) {
         return res.status(404).send({ message: "Appointment not found." })
     }
-
     if (appointment.customerId !== customerId) {
         return res.status(403).send({ message: "You can only cancel your own appointments." })
     }
-
     if (appointment.Status !== "Pending") {
         return res.status(409).send({
             message: `A ${appointment.Status.toLowerCase()} appointment cannot be cancelled.`,
@@ -265,7 +261,6 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
         { _id: appointment._id },
         { $set: { Status: "Cancelled" } },
     )
-
     res.send({ message: "Appointment cancelled." })
 })
 
@@ -275,7 +270,6 @@ app.get('/admin/appointments', async (req, res) => {
         .find({})
         .sort({ _id: -1 })
         .toArray()
-
     res.send(result)
 })
 
