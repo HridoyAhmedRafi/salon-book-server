@@ -158,6 +158,38 @@ app.patch('/services/:id', async (req, res) => {
     res.send({ message: "Service updated." })
 })
 
+app.patch('/services/:id/status', async (req, res) => {
+    const { id } = req.params
+    const { status } = req.body
+
+    if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid service id." })
+    }
+
+    if (status !== "active" && status !== "inactive") {
+        return res.status(400).send({
+            message: "Status must be 'active' or 'inactive'.",
+        })
+    }
+
+    const result = await services.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } },
+    )
+
+    if (result.matchedCount === 0) {
+        return res.status(404).send({ message: "Service not found." })
+    }
+
+    res.send({
+        message:
+            status === "active"
+                ? "Service activated."
+                : "Service deactivated.",
+        status,
+    })
+})
+
 // appoinment apis
 app.post('/book-appointment', async (req, res) => {
     const existingAppointment = await appointments.findOne({
