@@ -96,6 +96,68 @@ app.get('/admin/services', async (req, res) => {
     res.send(result);
 });
 
+app.patch('/services/:id', async (req, res) => {
+    const { id } = req.params
+
+    if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid service id." })
+    }
+
+    const editableFields = [
+        "serviceName",
+        "category",
+        "description",
+        "price",
+        "duration",
+        "image",
+    ]
+    const updates = {}
+
+    for (const field of editableFields) {
+        if (req.body[field] !== undefined) {
+            updates[field] = req.body[field]
+        }
+    }
+
+    if (Object.keys(updates).length === 0) {
+        return res.status(400).send({ message: "No fields to update." })
+    }
+
+    const hasEmptyText = [
+        "serviceName",
+        "category",
+        "description",
+        "image",
+    ].some((field) => updates[field] !== undefined && !String(updates[field]).trim())
+
+    if (hasEmptyText) {
+        return res.status(400).send({ message: "Text fields cannot be empty." })
+    }
+
+    const hasInvalidNumber =
+        (updates.price !== undefined &&
+            (typeof updates.price !== "number" || updates.price < 0)) ||
+        (updates.duration !== undefined &&
+            (typeof updates.duration !== "number" || updates.duration < 1))
+
+    if (hasInvalidNumber) {
+        return res.status(400).send({
+            message: "Price and duration must be valid numbers.",
+        })
+    }
+
+    const result = await services.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updates },
+    )
+
+    if (result.matchedCount === 0) {
+        return res.status(404).send({ message: "Service not found." })
+    }
+
+    res.send({ message: "Service updated." })
+})
+
 // appoinment apis
 app.post('/book-appointment', async (req, res) => {
     const existingAppointment = await appointments.findOne({
