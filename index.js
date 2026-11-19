@@ -87,6 +87,19 @@ app.get('/featured-services', async (req, res) => {
 
 // appoinment apis
 app.post('/book-appointment', async (req, res) => {
+    const existingAppointment = await appointments.findOne({
+        serviceId: req.body.serviceId,
+        appointmentDate: req.body.appointmentDate,
+        timeSlot: req.body.timeSlot,
+        Status: { $in: ["Pending", "Confirmed"] },
+    });
+
+    if (existingAppointment) {
+        return res.status(409).send({
+            message: "This time & date slot is already booked.",
+        });
+    }
+
     const appointment = {
         ...req.body,
         Status: "Pending",
