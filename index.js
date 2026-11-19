@@ -190,6 +190,22 @@ app.patch('/services/:id/status', async (req, res) => {
     })
 })
 
+app.delete('/services/:id', async (req, res) => {
+    const { id } = req.params
+
+    if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid service id." })
+    }
+
+    const result = await services.deleteOne({ _id: new ObjectId(id) })
+
+    if (result.deletedCount === 0) {
+        return res.status(404).send({ message: "Service not found." })
+    }
+
+    res.send({ message: "Service deleted." })
+})
+
 // appoinment apis
 app.post('/book-appointment', async (req, res) => {
     const existingAppointment = await appointments.findOne({
