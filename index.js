@@ -25,6 +25,7 @@ export async function connectToMongoDB() {
 const mongoClient = await connectToMongoDB()
 const db = mongoClient.db("salon-book-db")
 const services = db.collection("services")
+const appointments = db.collection("appointments")
 
 // services apis
 app.post('/add-service', async (req, res) => {
@@ -82,6 +83,18 @@ app.get('/featured-services', async (req, res) => {
         .toArray();
 
     res.send(result);
+})
+
+// appoinment apis
+app.post('/book-appointment', async (req, res) => {
+    const appointment = {
+        ...req.body,
+        Status: "Pending",
+        PaymentStatus: "Unpaid",
+        postedAt: new Date().toISOString().slice(0, 10)
+    }
+    const result = await appointments.insertOne(appointment)
+    res.send(result)
 })
 
 app.get('/', (req, res) => {
