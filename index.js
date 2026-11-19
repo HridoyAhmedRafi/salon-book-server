@@ -347,6 +347,40 @@ app.get('/admin/users', async (req, res) => {
     )
 })
 
+// admin block or unblock a customer
+app.patch('/admin/users/:id/status', async (req, res) => {
+    const { id } = req.params
+    const { isBlocked } = req.body
+
+    if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid user id." })
+    }
+    if (typeof isBlocked !== "boolean") {
+        return res.status(400).send({
+            message: "isBlocked must be a boolean.",
+        })
+    }
+
+    const user = await users.findOne({ _id: new ObjectId(id) })
+    if (!user) {
+        return res.status(404).send({ message: "User not found." })
+    }
+    if (user.role !== "customer") {
+        return res.status(400).send({
+            message: "Only customer accounts can be blocked.",
+        })
+    }
+
+    await users.updateOne(
+        { _id: user._id },
+        { $set: { isBlocked } },
+    )
+
+    res.send({
+        message: isBlocked ? "Customer blocked." : "Customer unblocked.",
+    })
+})
+
 // dashboard stats
 app.get("/admin/dashboard-stats", async (req, res) => {
     const totalCustomers = await users.countDocuments({
