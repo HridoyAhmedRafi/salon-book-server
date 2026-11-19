@@ -26,6 +26,7 @@ const mongoClient = await connectToMongoDB()
 const db = mongoClient.db("salon-book-db")
 const services = db.collection("services")
 const appointments = db.collection("appointments")
+const users = db.collection("user")
 
 // services apis
 app.post('/add-service', async (req, res) => {
@@ -117,7 +118,6 @@ app.get('/appointments/:customerId', async (req, res) => {
     res.send(result);
 })
 
-// cancel a pending appointment (customer only)
 app.patch('/appointments/:id/cancel', async (req, res) => {
     const { id } = req.params
     const { customerId } = req.body
@@ -150,6 +150,35 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
     res.send({ message: "Appointment cancelled." })
 })
 
+// dashboard stats
+app.get("/admin/dashboard-stats", async (req, res) => {
+    const totalCustomers = await users.countDocuments({
+        role: "customer",
+    });
+    const activeServices = await services.countDocuments({
+        status: "active",
+    });
+
+    const totalAppointments = await appointments.countDocuments();
+    const pendingAppointments = await appointments.countDocuments({
+        Status: "Pending",
+    });
+    const confirmedAppointments = await appointments.countDocuments({
+        Status: "Confirmed",
+    });
+    const successfulPayments = await appointments.countDocuments({
+        PaymentStatus: "Paid",
+    });
+
+    res.send({
+        totalCustomers,
+        activeServices,
+        totalAppointments,
+        pendingAppointments,
+        confirmedAppointments,
+        successfulPayments,
+    });
+});
 
 app.get('/', (req, res) => {
     res.send({ message: "API is running " })
