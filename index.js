@@ -1,9 +1,10 @@
 import express from 'express'
 import cors from 'cors'
 import 'dotenv/config'
+import dotenv from "dotenv";
 import { MongoClient, ObjectId } from 'mongodb'
 import stripe from "./config/stripe.js"
-
+dotenv.config();
 export const config = {
     api: {
         bodyParser: false,
