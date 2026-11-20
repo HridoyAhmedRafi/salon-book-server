@@ -1,10 +1,13 @@
 import express from 'express'
 import cors from 'cors'
 import 'dotenv/config'
+import stripe from "./config/stripe.js";
+import paymentRoutes from "./routes/payment.routes.js";
 
 const app = express()
 app.use(express.json())
 app.use(cors())
+app.use("/payments", paymentRoutes);
 const PORT = process.env.PORT || 5000
 
 import { MongoClient, ObjectId } from 'mongodb';
@@ -27,6 +30,17 @@ const db = mongoClient.db("salon-book-db")
 const services = db.collection("services")
 const appointments = db.collection("appointments")
 const users = db.collection("user")
+const transactions = db.collection("transactions");
+
+
+// payement integration
+
+
+
+
+
+
+
 
 // services apis
 app.post('/add-service', async (req, res) => {
