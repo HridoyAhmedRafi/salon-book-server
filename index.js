@@ -31,17 +31,45 @@ const services = db.collection("services")
 const appointments = db.collection("appointments")
 const users = db.collection("user")
 const transactions = db.collection("transactions");
+const sessions = db.collection("session");
+
+const verifyToken = async (req, res, next) => {
+    const authHeader = req.headers.authorization
+    if (!authHeader) {
+        res.status(401).send({
+            message: "Unauthorized"
+        });
+        return;
+    }
+
+    const token = authHeader.split(" ")[1]
+    if (!token) {
+        res.status(401).send({ message: 'Unauthorized' })
+        return
+    }
+
+    const query = { token }
+    const session = await sessions.findOne(query)
+    if (!session) {
+        res.status(401).send({ message: 'Unauthorized' })
+        return
+    }
+    const userId = session.userId
+    const userQuery = { _id: new ObjectId(userId) }
+    const user = await users.findOne(userQuery)
+    if (!user) {
+        res.status(401).send({ message: 'Unauthorized' })
+        return
+    }
+
+    req.user = user
+    next()
+}
 
 
-// payement integration
-
-
-
-
-
-
-
-
+app.get('/', (req, res) => {
+    res.send({ message: "API is running " })
+})
 // services apis
 app.post('/add-service', async (req, res) => {
     const service = {
@@ -83,7 +111,7 @@ app.get("/services", async (req, res) => {
     res.send(result);
 });
 
-app.get('/services/:id', async (req, res) => {
+app.get('/services/:id', verifyToken, async (req, res) => {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) }
     const result = await services.findOne(query)
@@ -423,9 +451,7 @@ app.get("/admin/dashboard-stats", async (req, res) => {
     });
 });
 
-app.get('/', (req, res) => {
-    res.send({ message: "API is running " })
-})
+
 
 app.listen(PORT, () => {
     console.log(`Example app listening on port ${PORT}`)
