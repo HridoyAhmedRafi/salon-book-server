@@ -65,13 +65,29 @@ const verifyToken = async (req, res, next) => {
     req.user = user
     next()
 }
+//verifyCustomer
+const verifyCustomer = (req, res, next) => {
+    if (req.user.role !== 'customer') {
+        res.status(401).send({ message: "Forbidden" })
+        return
+    }
+    next()
+}
+//verifyAdmin
+const verifyAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+        res.status(401).send({ message: "Forbidden" })
+        return
+    }
+    next()
+}
 
 
 app.get('/', (req, res) => {
     res.send({ message: "API is running " })
 })
 // services apis
-app.post('/add-service', async (req, res) => {
+app.post('/add-service', verifyToken, verifyAdmin, async (req, res) => {
     const service = {
         ...req.body,
         status: "active",
@@ -129,7 +145,7 @@ app.get('/featured-services', async (req, res) => {
 })
 
 // admin services apis
-app.get('/admin/services', async (req, res) => {
+app.get('/admin/services', verifyToken, verifyAdmin, async (req, res) => {
     const result = await services
         .find({})
         .sort({ postedAt: -1 })
@@ -138,7 +154,7 @@ app.get('/admin/services', async (req, res) => {
     res.send(result);
 });
 
-app.patch('/services/:id', async (req, res) => {
+app.patch('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
     const { id } = req.params
 
     if (!ObjectId.isValid(id)) {
@@ -200,7 +216,7 @@ app.patch('/services/:id', async (req, res) => {
     res.send({ message: "Service updated." })
 })
 
-app.patch('/services/:id/status', async (req, res) => {
+app.patch('/services/:id/status', verifyToken, verifyAdmin, async (req, res) => {
     const { id } = req.params
     const { status } = req.body
 
@@ -231,7 +247,7 @@ app.patch('/services/:id/status', async (req, res) => {
     })
 })
 
-app.delete('/services/:id', async (req, res) => {
+app.delete('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
     const { id } = req.params
 
     if (!ObjectId.isValid(id)) {
@@ -248,7 +264,7 @@ app.delete('/services/:id', async (req, res) => {
 })
 
 // appoinment apis
-app.post('/book-appointment', async (req, res) => {
+app.post('/book-appointment', verifyToken, async (req, res) => {
     const existingAppointment = await appointments.findOne({
         serviceId: req.body.serviceId,
         appointmentDate: req.body.appointmentDate,
@@ -307,7 +323,7 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
 })
 
 // admin appointment list
-app.get('/admin/appointments', async (req, res) => {
+app.get('/admin/appointments', verifyToken, verifyAdmin, async (req, res) => {
     const result = await appointments
         .find({})
         .sort({ _id: -1 })
@@ -316,7 +332,7 @@ app.get('/admin/appointments', async (req, res) => {
 })
 
 // admin confirm or cancel an appointment
-app.patch('/admin/appointments/:id/status', async (req, res) => {
+app.patch('/admin/appointments/:id/status', verifyToken, verifyAdmin, async (req, res) => {
     const { id } = req.params
     const { status } = req.body
 
@@ -358,7 +374,7 @@ app.patch('/admin/appointments/:id/status', async (req, res) => {
 })
 
 // admin customer list
-app.get('/admin/users', async (req, res) => {
+app.get('/admin/users', verifyToken, verifyAdmin, async (req, res) => {
     const customers = await users
         .find({ role: "customer" })
         .sort({ _id: -1 })
@@ -390,7 +406,7 @@ app.get('/admin/users', async (req, res) => {
 })
 
 // admin block or unblock a customer
-app.patch('/admin/users/:id/status', async (req, res) => {
+app.patch('/admin/users/:id/status', verifyToken, verifyAdmin, async (req, res) => {
     const { id } = req.params
     const { isBlocked } = req.body
 
