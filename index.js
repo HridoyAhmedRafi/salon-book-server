@@ -258,7 +258,6 @@ app.post(
                     message: "Appointment ID is required",
                 });
             }
-
             // Validate appointment ID
             if (!ObjectId.isValid(appointmentId)) {
                 return res.status(400).send({
