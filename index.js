@@ -263,7 +263,7 @@ app.delete('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
     res.send({ message: "Service deleted." })
 })
 
-// appoinment apis
+//customer appoinment apis
 app.post('/book-appointment', verifyToken, async (req, res) => {
     const existingAppointment = await appointments.findOne({
         serviceId: req.body.serviceId,
@@ -288,14 +288,14 @@ app.post('/book-appointment', verifyToken, async (req, res) => {
     res.send(result)
 })
 
-app.get('/appointments/:customerId', async (req, res) => {
+app.get('/appointments/:customerId', verifyToken, verifyCustomer, async (req, res) => {
     const result = await appointments
         .find({ customerId: req.params.customerId })
         .toArray();
     res.send(result);
 })
 
-app.patch('/appointments/:id/cancel', async (req, res) => {
+app.patch('/appointments/:id/cancel', verifyToken, verifyCustomer, async (req, res) => {
     const { id } = req.params
     const { customerId } = req.body
 
@@ -438,7 +438,7 @@ app.patch('/admin/users/:id/status', verifyToken, verifyAdmin, async (req, res) 
 })
 
 // dashboard stats
-app.get("/admin/dashboard-stats", async (req, res) => {
+app.get("/admin/dashboard-stats", verifyToken, verifyAdmin, async (req, res) => {
     const totalCustomers = await users.countDocuments({
         role: "customer",
     });
