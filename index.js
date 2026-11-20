@@ -1,136 +1,16 @@
 import express from 'express'
 import cors from 'cors'
 import 'dotenv/config'
+import { MongoClient, ObjectId } from 'mongodb'
+import stripe from "./config/stripe.js"
 
-import stripe from "./config/stripe.js";
-const app = express()
-
-app.post(
-    "/webhooks/stripe",
-    express.raw({ type: "application/json" }),
-    async (req, res) => {
-        const signature = req.headers["stripe-signature"];
-
-        let event;
-
-        try {
-            event = stripe.webhooks.constructEvent(
-                req.body,
-                signature,
-                process.env.STRIPE_WEBHOOK_SECRET
-            );
-        } catch (error) {
-            console.error("Webhook signature verification failed:", error.message);
-
-            return res.status(400).send({
-                message: "Invalid webhook signature",
-            });
-        }
-
-        console.log("Stripe event received:", event.type);
-
-        if (event.type === "checkout.session.completed") {
-            const session = event.data.object;
-
-            if (session.payment_status === "paid") {
-                const { appointmentId, customerId } = session.metadata;
-
-                if (!ObjectId.isValid(appointmentId) || !customerId) {
-                    return res.status(200).send({ received: true });
-                }
-
-                // Find appointment
-                const appointment = await appointments.findOne({
-                    _id: new ObjectId(appointmentId),
-                    customerId,
-                    Status: "Confirmed",
-                });
-
-                if (!appointment) {
-                    console.log("Appointment not found or not confirmed.");
-                    return res.status(200).send({ received: true });
-                }
-
-                // Check existing transaction
-                const existingTransaction = await transactions.findOne({
-                    stripeSessionId: session.id,
-                });
-
-                if (existingTransaction) {
-                    return res.status(200).send({
-                        received: true,
-                        message: "Transaction already exists",
-                    });
-                }
-
-                // Update appointment payment status
-                if (appointment.PaymentStatus === "Unpaid") {
-                    const result = await appointments.updateOne(
-                        {
-                            _id: appointment._id,
-                            customerId,
-                            Status: "Confirmed",
-                            PaymentStatus: "Unpaid",
-                        },
-                        {
-                            $set: {
-                                PaymentStatus: "Paid",
-                            },
-                        }
-                    );
-
-                    if (result.modifiedCount === 0) {
-                        console.log("Appointment payment status was not updated.");
-
-                        return res.status(200).send({ received: true });
-                    }
-                } else if (appointment.PaymentStatus !== "Paid") {
-                    return res.status(200).send({ received: true });
-                }
-
-                // Save transaction
-                // Save transaction
-                try {
-                    await transactions.insertOne({
-                        appointmentId,
-                        customerId,
-                        customerName: appointment.customerName,
-                        customerEmail: appointment.customerEmail,
-                        serviceName: appointment.serviceName,
-                        appointmentDate: appointment.appointmentDate,
-                        amount: appointment.price,
-                        currency: "BDT",
-                        stripeSessionId: session.id,
-                        status: "Paid",
-                        transactionDate: new Date(),
-                    });
-
-                    console.log("Appointment payment successful.");
-
-                } catch (error) {
-                    if (error.code === 11000) {
-                        console.log("Duplicate transaction prevented.");
-                    } else {
-                        throw error;
-                    }
-                }
-            }
-        }
-
-        return res.status(200).send({
-            received: true,
-        });
-    }
-);
-
-
-app.use(express.json())
-app.use(cors())
-
+export const config = {
+    api: {
+        bodyParser: false,
+    },
+}
 
 const PORT = process.env.PORT || 5000
-
-import { MongoClient, ObjectId } from 'mongodb';
 
 const client = new MongoClient(process.env.MONGODB_URI);
 
@@ -144,20 +24,173 @@ export async function connectToMongoDB() {
     }
 }
 
-
 const mongoClient = await connectToMongoDB()
 const db = mongoClient.db("salon-book-db")
 const services = db.collection("services")
 const appointments = db.collection("appointments")
 const users = db.collection("user")
-const transactions = db.collection("transactions");
+const transactions = db.collection("transactions")
+const sessions = db.collection("session")
+
 await transactions.createIndex(
     { stripeSessionId: 1 },
     { unique: true }
-);
+)
+console.log("Transaction unique index created.")
 
-console.log("Transaction unique index created.");
-const sessions = db.collection("session");
+export async function fulfillPayment(session) {
+    if (!session || session.payment_status !== "paid") {
+        return { success: false, reason: "Payment status is not paid" }
+    }
+
+    const { appointmentId, customerId } = session.metadata || {}
+
+    if (!appointmentId || !customerId || !ObjectId.isValid(appointmentId)) {
+        console.error("Invalid session metadata:", session.metadata)
+        return { success: false, reason: "Invalid session metadata" }
+    }
+
+    // 1. Check if transaction already exists for this stripe session
+    const existingTransaction = await transactions.findOne({
+        stripeSessionId: session.id,
+    })
+
+    if (existingTransaction) {
+        return { success: true, message: "Transaction already exists" }
+    }
+
+    // 2. Find confirmed appointment belonging to the customer
+    const appointment = await appointments.findOne({
+        _id: new ObjectId(appointmentId),
+        customerId: customerId,
+        Status: "Confirmed",
+    })
+
+    if (!appointment) {
+        console.error("Appointment not found or not confirmed for session:", session.id)
+        return { success: false, reason: "Appointment not found or not confirmed" }
+    }
+
+    // 3. Update appointment PaymentStatus to Paid
+    if (appointment.PaymentStatus !== "Paid") {
+        await appointments.updateOne(
+            {
+                _id: appointment._id,
+                customerId: customerId,
+                Status: "Confirmed",
+            },
+            {
+                $set: {
+                    PaymentStatus: "Paid",
+                },
+            }
+        )
+    }
+
+    // 4. Safely insert transaction document in BDT
+    try {
+        await transactions.insertOne({
+            appointmentId: appointment._id.toString(),
+            customerId: appointment.customerId,
+            customerName: appointment.customerName,
+            customerEmail: appointment.customerEmail,
+            serviceName: appointment.serviceName,
+            appointmentDate: appointment.appointmentDate,
+            amount: appointment.price, // BDT amount preserved
+            currency: "BDT",
+            stripeSessionId: session.id,
+            status: "Paid",
+            transactionDate: new Date(),
+        })
+        console.log(`Payment fulfilled successfully for appointment ${appointmentId}`)
+    } catch (error) {
+        if (error.code === 11000) {
+            console.log(`Duplicate transaction prevented for session ${session.id}`)
+        } else {
+            console.error("Failed to insert transaction:", error)
+            throw error
+        }
+    }
+
+    return { success: true }
+}
+
+const app = express()
+
+// Webhook route registered BEFORE global express.json() with express.raw()
+app.post(
+    "/webhooks/stripe",
+    express.raw({ type: "application/json" }),
+    async (req, res) => {
+        const signature = req.headers["stripe-signature"]
+
+        if (!signature) {
+            return res.status(400).send({
+                message: "Missing stripe-signature header",
+            })
+        }
+
+        const payload = Buffer.isBuffer(req.body)
+            ? req.body
+            : req.rawBody
+                ? req.rawBody
+                : typeof req.body === "string"
+                    ? req.body
+                    : null
+
+        if (!payload) {
+            return res.status(400).send({
+                message: "Missing webhook payload",
+            })
+        }
+
+        let event
+
+        try {
+            event = stripe.webhooks.constructEvent(
+                payload,
+                signature,
+                process.env.STRIPE_WEBHOOK_SECRET
+            )
+        } catch (error) {
+            console.error("Webhook signature verification failed:", error.message)
+
+            return res.status(400).send({
+                message: "Invalid webhook signature",
+            })
+        }
+
+        console.log("Stripe event received:", event.type)
+
+        if (event.type === "checkout.session.completed") {
+            const session = event.data.object
+
+            if (session.payment_status === "paid") {
+                try {
+                    await fulfillPayment(session)
+                } catch (err) {
+                    console.error("Error fulfilling payment from webhook:", err)
+                    return res.status(500).send({
+                        message: "Error fulfilling payment",
+                    })
+                }
+            }
+        }
+
+        return res.status(200).send({
+            received: true,
+        })
+    }
+)
+
+app.use(
+    express.json({
+        verify: (req, res, buf) => {
+            req.rawBody = buf
+        },
+    })
+)
+app.use(cors())
 
 const verifyToken = async (req, res, next) => {
     const authHeader = req.headers.authorization
@@ -280,34 +313,30 @@ app.post(
             const amountInUSD = appointment.price / BDT_TO_USD_RATE;
             const stripeAmount = Math.round(amountInUSD * 100);
 
-            // Create Stripe Checkout Session
-            const session = await stripe.checkout.sessions.create(
-                {
+            const clientUrl = (process.env.CLIENT_URL || "http://localhost:3000").replace(/\/$/, "");
 
-                    mode: "payment",
-                    metadata: {
-                        appointmentId: appointment._id.toString(),
-                        customerId: appointment.customerId,
-                    },
-                    line_items: [
-                        {
-                            price_data: {
-                                currency: "usd",
-                                product_data: {
-                                    name: appointment.serviceName,
-                                },
-                                unit_amount: stripeAmount,
-                            },
-                            quantity: 1,
-                        },
-                    ],
-                    success_url: `${process.env.CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-                    cancel_url: `${process.env.CLIENT_URL}/payment/cancel`,
+            // Create Stripe Checkout Session
+            const session = await stripe.checkout.sessions.create({
+                mode: "payment",
+                metadata: {
+                    appointmentId: appointment._id.toString(),
+                    customerId: appointment.customerId,
                 },
-                {
-                    idempotencyKey: `appointment-${appointment._id}-v2`,
-                }
-            );
+                line_items: [
+                    {
+                        price_data: {
+                            currency: "usd",
+                            product_data: {
+                                name: appointment.serviceName,
+                            },
+                            unit_amount: stripeAmount,
+                        },
+                        quantity: 1,
+                    },
+                ],
+                success_url: `${clientUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${clientUrl}/payment/cancel`,
+            });
             console.log("Stripe Checkout URL:", session.url);
             console.log("Stripe Session ID:", session.id);
             console.log("Stripe Session Status:", session.status);
@@ -334,27 +363,70 @@ app.get(
         try {
             const { sessionId } = req.params;
 
+            if (!sessionId || typeof sessionId !== "string") {
+                return res.status(400).send({
+                    paid: false,
+                    message: "Invalid session ID.",
+                });
+            }
+
+            // 1. Check existing transaction in DB
             const transaction = await transactions.findOne({
                 stripeSessionId: sessionId,
                 customerId: req.user._id.toString(),
                 status: "Paid",
             });
 
-            if (!transaction) {
-                return res.status(202).send({
-                    paid: false,
-                    message: "Payment is still processing.",
+            if (transaction) {
+                return res.send({
+                    paid: true,
+                    message: "Payment verified successfully.",
                 });
             }
 
-            return res.send({
-                paid: true,
-                message: "Payment successful.",
+            // 2. Fallback: Retrieve session directly from Stripe API
+            const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+            if (!session) {
+                return res.status(404).send({
+                    paid: false,
+                    message: "Checkout session not found.",
+                });
+            }
+
+            // Verify customer ownership
+            if (session.metadata?.customerId !== req.user._id.toString()) {
+                return res.status(403).send({
+                    paid: false,
+                    message: "Unauthorized payment session.",
+                });
+            }
+
+            if (session.payment_status === "paid") {
+                const result = await fulfillPayment(session);
+
+                if (result.success) {
+                    return res.send({
+                        paid: true,
+                        message: "Payment verified and recorded successfully.",
+                    });
+                } else {
+                    return res.status(400).send({
+                        paid: false,
+                        message: result.reason || "Could not fulfill payment.",
+                    });
+                }
+            }
+
+            return res.status(202).send({
+                paid: false,
+                message: "Payment is still processing.",
             });
         } catch (error) {
             console.error("Payment verification error:", error);
 
             return res.status(500).send({
+                paid: false,
                 message: "Failed to verify payment.",
             });
         }
