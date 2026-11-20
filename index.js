@@ -1,13 +1,133 @@
 import express from 'express'
 import cors from 'cors'
 import 'dotenv/config'
-import stripe from "./config/stripe.js";
-import paymentRoutes from "./routes/payment.routes.js";
 
+import stripe from "./config/stripe.js";
 const app = express()
+
+app.post(
+    "/webhooks/stripe",
+    express.raw({ type: "application/json" }),
+    async (req, res) => {
+        const signature = req.headers["stripe-signature"];
+
+        let event;
+
+        try {
+            event = stripe.webhooks.constructEvent(
+                req.body,
+                signature,
+                process.env.STRIPE_WEBHOOK_SECRET
+            );
+        } catch (error) {
+            console.error("Webhook signature verification failed:", error.message);
+
+            return res.status(400).send({
+                message: "Invalid webhook signature",
+            });
+        }
+
+        console.log("Stripe event received:", event.type);
+
+        if (event.type === "checkout.session.completed") {
+            const session = event.data.object;
+
+            if (session.payment_status === "paid") {
+                const { appointmentId, customerId } = session.metadata;
+
+                if (!ObjectId.isValid(appointmentId) || !customerId) {
+                    return res.status(200).send({ received: true });
+                }
+
+                // Find appointment
+                const appointment = await appointments.findOne({
+                    _id: new ObjectId(appointmentId),
+                    customerId,
+                    Status: "Confirmed",
+                });
+
+                if (!appointment) {
+                    console.log("Appointment not found or not confirmed.");
+                    return res.status(200).send({ received: true });
+                }
+
+                // Check existing transaction
+                const existingTransaction = await transactions.findOne({
+                    stripeSessionId: session.id,
+                });
+
+                if (existingTransaction) {
+                    return res.status(200).send({
+                        received: true,
+                        message: "Transaction already exists",
+                    });
+                }
+
+                // Update appointment payment status
+                if (appointment.PaymentStatus === "Unpaid") {
+                    const result = await appointments.updateOne(
+                        {
+                            _id: appointment._id,
+                            customerId,
+                            Status: "Confirmed",
+                            PaymentStatus: "Unpaid",
+                        },
+                        {
+                            $set: {
+                                PaymentStatus: "Paid",
+                            },
+                        }
+                    );
+
+                    if (result.modifiedCount === 0) {
+                        console.log("Appointment payment status was not updated.");
+
+                        return res.status(200).send({ received: true });
+                    }
+                } else if (appointment.PaymentStatus !== "Paid") {
+                    return res.status(200).send({ received: true });
+                }
+
+                // Save transaction
+                // Save transaction
+                try {
+                    await transactions.insertOne({
+                        appointmentId,
+                        customerId,
+                        customerName: appointment.customerName,
+                        customerEmail: appointment.customerEmail,
+                        serviceName: appointment.serviceName,
+                        appointmentDate: appointment.appointmentDate,
+                        amount: appointment.price,
+                        currency: "BDT",
+                        stripeSessionId: session.id,
+                        status: "Paid",
+                        transactionDate: new Date(),
+                    });
+
+                    console.log("Appointment payment successful.");
+
+                } catch (error) {
+                    if (error.code === 11000) {
+                        console.log("Duplicate transaction prevented.");
+                    } else {
+                        throw error;
+                    }
+                }
+            }
+        }
+
+        return res.status(200).send({
+            received: true,
+        });
+    }
+);
+
+
 app.use(express.json())
 app.use(cors())
-app.use("/payments", paymentRoutes);
+
+
 const PORT = process.env.PORT || 5000
 
 import { MongoClient, ObjectId } from 'mongodb';
@@ -31,6 +151,12 @@ const services = db.collection("services")
 const appointments = db.collection("appointments")
 const users = db.collection("user")
 const transactions = db.collection("transactions");
+await transactions.createIndex(
+    { stripeSessionId: 1 },
+    { unique: true }
+);
+
+console.log("Transaction unique index created.");
 const sessions = db.collection("session");
 
 const verifyToken = async (req, res, next) => {
@@ -82,10 +208,187 @@ const verifyAdmin = (req, res, next) => {
     next()
 }
 
+//payment related
+const BDT_TO_USD_RATE = 122;
+app.post(
+    "/payments/create-checkout-session",
+    verifyToken,
+    verifyCustomer,
+    async (req, res) => {
+
+        try {
+            // Get appointment ID
+            const { appointmentId } = req.body;
+
+            if (!appointmentId) {
+                return res.status(400).send({
+                    message: "Appointment ID is required",
+                });
+            }
+
+            // Validate appointment ID
+            if (!ObjectId.isValid(appointmentId)) {
+                return res.status(400).send({
+                    message: "Invalid appointment ID",
+                });
+            }
+
+            // Find appointment
+            const appointment = await appointments.findOne({
+                _id: new ObjectId(appointmentId),
+            });
+
+            if (!appointment) {
+                return res.status(404).send({
+                    message: "Appointment not found",
+                });
+            }
+
+            // Verify appointment ownership
+            if (appointment.customerId !== req.user._id.toString()) {
+                return res.status(403).send({
+                    message: "You are not allowed to pay for this appointment",
+                });
+            }
+
+            // Check appointment status
+            if (appointment.Status !== "Confirmed") {
+                return res.status(400).send({
+                    message: "Only confirmed appointments can be paid",
+                });
+            }
+
+            // Check payment status
+            if (appointment.PaymentStatus === "Paid") {
+                return res.status(400).send({
+                    message: "This appointment has already been paid",
+                });
+            }
+
+            // Validate appointment price
+            if (
+                typeof appointment.price !== "number" ||
+                !Number.isFinite(appointment.price) ||
+                appointment.price <= 0
+            ) {
+                return res.status(400).send({
+                    message: "Invalid appointment price",
+                });
+            }
+
+            // Convert BDT to USD
+            const amountInUSD = appointment.price / BDT_TO_USD_RATE;
+            const stripeAmount = Math.round(amountInUSD * 100);
+
+            // Create Stripe Checkout Session
+            const session = await stripe.checkout.sessions.create(
+                {
+
+                    mode: "payment",
+                    metadata: {
+                        appointmentId: appointment._id.toString(),
+                        customerId: appointment.customerId,
+                    },
+                    line_items: [
+                        {
+                            price_data: {
+                                currency: "usd",
+                                product_data: {
+                                    name: appointment.serviceName,
+                                },
+                                unit_amount: stripeAmount,
+                            },
+                            quantity: 1,
+                        },
+                    ],
+                    success_url: `${process.env.CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+                    cancel_url: `${process.env.CLIENT_URL}/payment/cancel`,
+                },
+                {
+                    idempotencyKey: `appointment-${appointment._id}-v2`,
+                }
+            );
+            console.log("Stripe Checkout URL:", session.url);
+            console.log("Stripe Session ID:", session.id);
+            console.log("Stripe Session Status:", session.status);
+            return res.send({
+                url: session.url,
+            });
+
+
+        } catch (error) {
+            console.error("Payment error:", error);
+
+            return res.status(500).send({
+                message: "Failed to create checkout session",
+            });
+        }
+    }
+);
+
+app.get(
+    "/payments/verify-session/:sessionId",
+    verifyToken,
+    verifyCustomer,
+    async (req, res) => {
+        try {
+            const { sessionId } = req.params;
+
+            const transaction = await transactions.findOne({
+                stripeSessionId: sessionId,
+                customerId: req.user._id.toString(),
+                status: "Paid",
+            });
+
+            if (!transaction) {
+                return res.status(202).send({
+                    paid: false,
+                    message: "Payment is still processing.",
+                });
+            }
+
+            return res.send({
+                paid: true,
+                message: "Payment successful.",
+            });
+        } catch (error) {
+            console.error("Payment verification error:", error);
+
+            return res.status(500).send({
+                message: "Failed to verify payment.",
+            });
+        }
+    }
+);
+
 
 app.get('/', (req, res) => {
     res.send({ message: "API is running " })
 })
+
+// payment/transaction get api
+app.get(
+    "/admin/transactions",
+    verifyToken,
+    verifyAdmin,
+    async (req, res) => {
+        try {
+            const result = await transactions
+                .find()
+                .sort({ transactionDate: -1 })
+                .toArray();
+
+            return res.send(result);
+        } catch (error) {
+            console.error("Get transactions error:", error);
+
+            return res.status(500).send({
+                message: "Failed to fetch transactions",
+            });
+        }
+    }
+);
+
 // services apis
 app.post('/add-service', verifyToken, verifyAdmin, async (req, res) => {
     const service = {
