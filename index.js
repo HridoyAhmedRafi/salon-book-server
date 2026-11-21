@@ -639,7 +639,7 @@ app.delete('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
 })
 
 //customer appoinment apis
-app.post('/book-appointment', verifyToken, async (req, res) => {
+app.post('/book-appointment', verifyToken, verifyCustomer, async (req, res) => {
     const existingAppointment = await appointments.findOne({
         serviceId: req.body.serviceId,
         appointmentDate: req.body.appointmentDate,
