@@ -665,12 +665,13 @@ app.post('/book-appointment', verifyToken, verifyCustomer, async (req, res) => {
     res.send(result)
 })
 
-app.get('/appointments/:customerId', verifyToken, verifyCustomer, async (req, res) => {
+
+app.get('/appointments', verifyToken, verifyCustomer, async (req, res) => {
     const result = await appointments
-        .find({ customerId: req.params.customerId })
+        .find({ customerId: req.user._id.toString() })
         .toArray();
     res.send(result);
-})
+});
 
 app.patch('/appointments/:id/cancel', verifyToken, verifyCustomer, async (req, res) => {
     const { id } = req.params
