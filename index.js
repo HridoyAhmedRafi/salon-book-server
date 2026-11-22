@@ -35,11 +35,11 @@ const users = db.collection("user")
 const transactions = db.collection("transactions")
 const sessions = db.collection("session")
 
-await transactions.createIndex(
-    { stripeSessionId: 1 },
-    { unique: true }
-)
-console.log("Transaction unique index created.")
+// await transactions.createIndex(
+//     { stripeSessionId: 1 },
+//     { unique: true }
+// )
+// console.log("Transaction unique index created.")
 
 export async function fulfillPayment(session) {
     if (!session || session.payment_status !== "paid") {
